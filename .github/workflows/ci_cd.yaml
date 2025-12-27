@@ -1,4 +1,4 @@
-name: Build, Test, and Deploy
+name: Build, Secure, and Deploy
 
 on:
   push:
@@ -7,38 +7,45 @@ on:
 
 jobs:
   # ------------------------------------------------------------------
-  # JOB 0: SONARCLOUD SCAN (New Security Gate)
-  # Checks source code for bugs before we even try to build
+  # JOB 1: CODE SECURITY (SonarCloud)
+  # Fix: We inject the keys directly here so no extra file is needed.
   # ------------------------------------------------------------------
   Sonar-Scan:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
         with:
-          fetch-depth: 0  # Required for SonarCloud to analyze history
-      
+          fetch-depth: 0  # Required for SonarCloud to read history
+
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
+        uses: SonarSource/sonarqube-scan-action@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          #  YOU MUST UPDATE THESE TWO LINES
+          args: >
+            -Dsonar.organization=ruda0008
+            -Dsonar.projectKey=ruda0008_store-admin-final-project
+            -Dsonar.sources=.
+            -Dsonar.verbose=true
 
   # ------------------------------------------------------------------
-  # JOB 1: BUILD & TRIVY SCAN
+  # JOB 2: BUILD & CONTAINER SECURITY (Trivy)
   # ------------------------------------------------------------------
   Build:
     runs-on: ubuntu-latest
-    needs: Sonar-Scan  # Wait for Sonar to pass
+    needs: Sonar-Scan  # Pipeline stops here if Sonar finds bugs
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
 
       - name: Install Dependencies
-        run: echo "Simulating Install Dependencies... Install Dependencies completed successfully!"
+        run: echo "Simulating Install Dependencies..."
 
       - name: Unit Tests
-        run: echo "Simulating unit tests... Test execution completed successfully!"
+        run: echo "Simulating unit tests..."
 
       - name: Log in to Docker
         uses: docker/login-action@v2
@@ -53,21 +60,18 @@ jobs:
         run: |
           docker build -t $DOCKER_USERNAME/$DOCKER_IMAGE_NAME:test .
 
-      # --- NEW GOLDEN SECURITY GATE (TRIVY) ---
-      # Fails pipeline if Critical vulnerabilities are found in the image
+      # --- GOLDEN SECURITY GATE (TRIVY) ---
       - name: Run Trivy Vulnerability Scanner
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: '${{ secrets.DOCKER_USERNAME }}/${{ vars.DOCKER_IMAGE_NAME }}:test'
           format: 'table'
-          exit-code: '1'          # 1 = Fail pipeline, 0 = Just warn
+          exit-code: '1'          # FAIL pipeline if Critical bugs found
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
-      # ----------------------------------------
 
       - name: Push Docker Image
-        # Only runs if Trivy finds no critical bugs
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
           DOCKER_IMAGE_NAME: ${{ vars.DOCKER_IMAGE_NAME }}
@@ -75,7 +79,7 @@ jobs:
           docker push $DOCKER_USERNAME/$DOCKER_IMAGE_NAME:test
 
   # ------------------------------------------------------------------
-  # JOB 2: TEST (Your original Integration Tests)
+  # JOB 3: TEST (Integration)
   # ------------------------------------------------------------------
   Test:
     runs-on: ubuntu-latest
@@ -84,10 +88,10 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
       - name: Integration Tests
-        run: echo "Simulating integration tests... Test execution completed successfully!"
+        run: echo "Simulating integration tests..."
 
   # ------------------------------------------------------------------
-  # JOB 3: RELEASE (Promote to Latest)
+  # JOB 4: RELEASE
   # ------------------------------------------------------------------
   Release:
     runs-on: ubuntu-latest
@@ -110,7 +114,7 @@ jobs:
           docker push $DOCKER_USERNAME/$DOCKER_IMAGE_NAME:latest
 
   # ------------------------------------------------------------------
-  # JOB 4: DEPLOY (Your original logic)
+  # JOB 5: DEPLOY (To Azure AKS)
   # ------------------------------------------------------------------
   Deploy:
     runs-on: ubuntu-latest
@@ -138,3 +142,159 @@ jobs:
           export KUBECONFIG=kubeconfig
           kubectl rollout status deployment/$DEPLOYMENT_NAME
           kubectl get pods -o wide
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# name: Build, Test, and Deploy
+
+# on:
+#   push:
+#     branches:
+#       - main
+
+# jobs:
+#   # ------------------------------------------------------------------
+#   # JOB 0: SONARCLOUD SCAN (New Security Gate)
+#   # Checks source code for bugs before we even try to build
+#   # ------------------------------------------------------------------
+#   Sonar-Scan:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout Code
+#         uses: actions/checkout@v3
+#         with:
+#           fetch-depth: 0  # Required for SonarCloud to analyze history
+      
+#       - name: SonarCloud Scan
+#         uses: SonarSource/sonarcloud-github-action@master
+#         env:
+#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+#   # ------------------------------------------------------------------
+#   # JOB 1: BUILD & TRIVY SCAN
+#   # ------------------------------------------------------------------
+#   Build:
+#     runs-on: ubuntu-latest
+#     needs: Sonar-Scan  # Wait for Sonar to pass
+#     steps:
+#       - name: Checkout Code
+#         uses: actions/checkout@v3
+
+#       - name: Install Dependencies
+#         run: echo "Simulating Install Dependencies... Install Dependencies completed successfully!"
+
+#       - name: Unit Tests
+#         run: echo "Simulating unit tests... Test execution completed successfully!"
+
+#       - name: Log in to Docker
+#         uses: docker/login-action@v2
+#         with:
+#           username: ${{ secrets.DOCKER_USERNAME }}
+#           password: ${{ secrets.DOCKER_PASSWORD }}
+
+#       - name: Build Docker Image
+#         env:
+#           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+#           DOCKER_IMAGE_NAME: ${{ vars.DOCKER_IMAGE_NAME }}
+#         run: |
+#           docker build -t $DOCKER_USERNAME/$DOCKER_IMAGE_NAME:test .
+
+#       # --- NEW GOLDEN SECURITY GATE (TRIVY) ---
+#       # Fails pipeline if Critical vulnerabilities are found in the image
+#       - name: Run Trivy Vulnerability Scanner
+#         uses: aquasecurity/trivy-action@master
+#         with:
+#           image-ref: '${{ secrets.DOCKER_USERNAME }}/${{ vars.DOCKER_IMAGE_NAME }}:test'
+#           format: 'table'
+#           exit-code: '1'          # 1 = Fail pipeline, 0 = Just warn
+#           ignore-unfixed: true
+#           vuln-type: 'os,library'
+#           severity: 'CRITICAL,HIGH'
+#       # ----------------------------------------
+
+#       - name: Push Docker Image
+#         # Only runs if Trivy finds no critical bugs
+#         env:
+#           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+#           DOCKER_IMAGE_NAME: ${{ vars.DOCKER_IMAGE_NAME }}
+#         run: |
+#           docker push $DOCKER_USERNAME/$DOCKER_IMAGE_NAME:test
+
+#   # ------------------------------------------------------------------
+#   # JOB 2: TEST (Your original Integration Tests)
+#   # ------------------------------------------------------------------
+#   Test:
+#     runs-on: ubuntu-latest
+#     needs: Build
+#     steps:
+#       - name: Checkout Code
+#         uses: actions/checkout@v3
+#       - name: Integration Tests
+#         run: echo "Simulating integration tests... Test execution completed successfully!"
+
+#   # ------------------------------------------------------------------
+#   # JOB 3: RELEASE (Promote to Latest)
+#   # ------------------------------------------------------------------
+#   Release:
+#     runs-on: ubuntu-latest
+#     needs: Test
+#     steps:
+#       - name: Checkout Code
+#         uses: actions/checkout@v3
+#       - name: Log in to Docker
+#         uses: docker/login-action@v2
+#         with:
+#           username: ${{ secrets.DOCKER_USERNAME }}
+#           password: ${{ secrets.DOCKER_PASSWORD }}
+#       - name: Promote Docker Image to Latest
+#         env:
+#           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+#           DOCKER_IMAGE_NAME: ${{ vars.DOCKER_IMAGE_NAME }}
+#         run: |
+#           docker pull $DOCKER_USERNAME/$DOCKER_IMAGE_NAME:test
+#           docker tag $DOCKER_USERNAME/$DOCKER_IMAGE_NAME:test $DOCKER_USERNAME/$DOCKER_IMAGE_NAME:latest
+#           docker push $DOCKER_USERNAME/$DOCKER_IMAGE_NAME:latest
+
+#   # ------------------------------------------------------------------
+#   # JOB 4: DEPLOY (Your original logic)
+#   # ------------------------------------------------------------------
+#   Deploy:
+#     runs-on: ubuntu-latest
+#     needs: Release
+#     steps:
+#       - name: Deploy to AKS
+#         env:
+#           KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+#           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+#           DOCKER_IMAGE_NAME: ${{ vars.DOCKER_IMAGE_NAME }}
+#           DEPLOYMENT_NAME: ${{ vars.DEPLOYMENT_NAME }}
+#           CONTAINER_NAME: ${{ vars.CONTAINER_NAME }}
+#         run: |
+#           echo "$KUBE_CONFIG_DATA" | base64 -d > kubeconfig
+#           export KUBECONFIG=kubeconfig
+#           kubectl set image deployment/$DEPLOYMENT_NAME $CONTAINER_NAME=$DOCKER_USERNAME/$DOCKER_IMAGE_NAME:latest
+#           kubectl rollout restart deployment/$DEPLOYMENT_NAME
+      
+#       - name: Verify Deployment
+#         env:
+#           KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+#           DEPLOYMENT_NAME: ${{ vars.DEPLOYMENT_NAME }}
+#         run: |
+#           echo "$KUBE_CONFIG_DATA" | base64 -d > kubeconfig
+#           export KUBECONFIG=kubeconfig
+#           kubectl rollout status deployment/$DEPLOYMENT_NAME
+#           kubectl get pods -o wide
